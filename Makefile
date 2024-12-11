@@ -36,6 +36,7 @@ ifneq ($(HIP_COMPILER),)
 endif
 endif
 
+RUNNER_TARGETS += vulkan
 
 all: runners exe
 

@@ -1,0 +1,59 @@
+# Build rules for Vulkan runner
+
+include make/common-defs.make
+
+GPU_RUNNER_NAME := vulkan
+GPU_RUNNER_GO_TAGS := vulkan
+GPU_RUNNER_DRIVER_LIB_LINK := -lvulkan
+GPU_LIB_DIR := $(VULKAN_ROOT)
+
+ifeq ($(OS),windows)
+    GPU_COMPILER_CFLAGS = $(CFLAGS) -D_WIN32_WINNT=0x602 
+    GPU_COMPILER_CXXFLAGS = $(CXXFLAGS) -D_WIN32_WINNT=0x602 
+else ifeq ($(OS),linux)
+    GPU_COMPILER_CFLAGS = $(CFLAGS) -fPIC -D_GNU_SOURCE
+    GPU_COMPILER_CXXFLAGS = $(CXXFLAGS) -fPIC -D_GNU_SOURCE
+endif
+
+# Override GPU_RUNNER_SRCS to exclude CUDA files
+GPU_RUNNER_SRCS := \
+    llama/ggml.c \
+    llama/ggml-backend.cpp \
+    llama/ggml-alloc.c \
+    llama/ggml-quants.c \
+    llama/sgemm.cpp \
+    llama/ggml-aarch64.c \
+    llama/ggml-threading.cpp
+
+GPU_COMPILER_EXTRA_FLAGS := -fPIC -Wno-unused-function -std=c++11
+
+GPU_COMPILER_CUFLAGS = \
+    $(GPU_COMPILER_EXTRA_FLAGS) \
+    -DGGML_VULKAN=1 \
+    -DGGML_SHARED=1 \
+    -DGGML_BACKEND_SHARED=1 \
+    -DGGML_BUILD=1 \
+    -DGGML_BACKEND_BUILD=1 \
+    -DGGML_USE_LLAMAFILE \
+    -DK_QUANTS_PER_ITERATION=2 \
+    -DNDEBUG \
+    -D_GNU_SOURCE \
+    -D_XOPEN_SOURCE=600 \
+    -I./llama/ \
+    -O3
+
+# Set the C/C++ compiler instead of CUDA
+GPU_COMPILER = $(CC)
+
+# Add Vulkan-specific linker flags
+EXTRA_LD_FLAGS := -lstdc++ -lm
+ifeq ($(OS),windows)
+    # For Windows
+    CGO_EXTRA_LDFLAGS := -L$(VULKAN_SDK)/Lib -lvulkan-1
+else
+    # For Linux and other Unix-based systems
+    CGO_EXTRA_LDFLAGS := -L$(VULKAN_SDK)/lib -lvulkan
+endif
+
+
+include make/gpu.make

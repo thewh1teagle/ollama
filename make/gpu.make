@@ -18,8 +18,14 @@ GPU_RUNNER_SRCS := \
 	$(filter-out $(wildcard llama/ggml-cuda/fattn*.cu),$(wildcard llama/ggml-cuda/*.cu)) \
 	$(wildcard llama/ggml-cuda/template-instances/mmq*.cu) \
 	llama/ggml.c llama/ggml-backend.cpp llama/ggml-alloc.c llama/ggml-quants.c llama/sgemm.cpp llama/ggml-aarch64.c llama/ggml-threading.cpp
+
 GPU_RUNNER_HDRS := \
 	$(wildcard llama/ggml-cuda/*.cuh)
+
+ifeq ($(CUDA_PATH),)
+	GPU_RUNNER_SRCS := $(filter-out llama/ggml-cuda/%, $(GPU_RUNNER_SRCS))
+	GPU_RUNNER_HDRS := $(filter-out llama/ggml-cuda/%, $(GPU_RUNNER_HDRS))
+endif
 
 
 # Conditional flags and components to speed up developer builds
@@ -27,12 +33,15 @@ ifneq ($(OLLAMA_FAST_BUILD),)
 	GPU_COMPILER_CUFLAGS += 	\
 		-DGGML_DISABLE_FLASH_ATTN
 else
-	GPU_RUNNER_SRCS += \
-		$(wildcard llama/ggml-cuda/fattn*.cu) \
-		$(wildcard llama/ggml-cuda/template-instances/fattn-wmma*.cu) \
-		$(wildcard llama/ggml-cuda/template-instances/fattn-vec*q4_0-q4_0.cu) \
-		$(wildcard llama/ggml-cuda/template-instances/fattn-vec*q8_0-q8_0.cu) \
-		$(wildcard llama/ggml-cuda/template-instances/fattn-vec*f16-f16.cu)
+	ifneq ($(CUDA_PATH),)
+		# CUDA_PATH is defined, so include the CUDA files
+		GPU_RUNNER_SRCS += \
+			$(wildcard llama/ggml-cuda/fattn*.cu) \
+			$(wildcard llama/ggml-cuda/template-instances/fattn-wmma*.cu) \
+			$(wildcard llama/ggml-cuda/template-instances/fattn-vec*q4_0-q4_0.cu) \
+			$(wildcard llama/ggml-cuda/template-instances/fattn-vec*q8_0-q8_0.cu) \
+			$(wildcard llama/ggml-cuda/template-instances/fattn-vec*f16-f16.cu)
+	endif
 endif
 
 GPU_RUNNER_OBJS := $(GPU_RUNNER_SRCS:.cu=.$(GPU_RUNNER_NAME).$(OBJ_EXT))
@@ -63,7 +72,7 @@ $(RUNNERS_BUILD_DIR)/$(GPU_RUNNER_NAME)$(GPU_RUNNER_EXTRA_VARIANT)/ollama_llama_
 	GOARCH=$(ARCH) CGO_LDFLAGS="$(TARGET_CGO_LDFLAGS)" go build -buildmode=pie $(GPU_GOFLAGS) -trimpath -tags $(subst $(space),$(comma),$(GPU_RUNNER_CPU_FLAGS) $(GPU_RUNNER_GO_TAGS)) -o $@ ./cmd/runner
 $(RUNNERS_BUILD_DIR)/$(GPU_RUNNER_NAME)$(GPU_RUNNER_EXTRA_VARIANT)/$(SHARED_PREFIX)ggml_$(GPU_RUNNER_NAME).$(SHARED_EXT): $(GPU_RUNNER_OBJS) $(COMMON_HDRS) $(GPU_RUNNER_HDRS)
 	@-mkdir -p $(dir $@)
-	$(CCACHE) $(GPU_COMPILER) --shared -L$(GPU_LIB_DIR) $(GPU_RUNNER_DRIVER_LIB_LINK) -L${DIST_GPU_RUNNER_DEPS_DIR} $(foreach lib, $(GPU_RUNNER_LIBS_SHORT), -l$(lib)) $(GPU_RUNNER_OBJS) -o $@
+	$(CCACHE) $(GPU_COMPILER) --shared -L$(GPU_LIB_DIR) $(GPU_RUNNER_DRIVER_LIB_LINK) -L${DIST_GPU_RUNNER_DEPS_DIR} $(foreach lib, $(GPU_RUNNER_LIBS_SHORT), -l$(lib)) $(GPU_RUNNER_OBJS) $(EXTRA_LD_FLAGS) -o $@
 
 # Distribution targets
 $(RUNNERS_DIST_DIR)/%: $(RUNNERS_BUILD_DIR)/%
